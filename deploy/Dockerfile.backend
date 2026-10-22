@@ -1,0 +1,24 @@
+FROM python:3.12-slim AS base
+
+WORKDIR /app
+
+# системные зависимости (bcrypt, cryptography собираются из исходников только при необходимости)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md ./
+COPY app ./app
+
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+
+# непользователь без прав
+RUN useradd --create-home rucaster && chown -R rucaster:rucaster /app
+USER rucaster
+
+# HTTP API + NTRIP
+EXPOSE 8001 2101
+
+HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://localhost:8001/health || exit 1
+
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

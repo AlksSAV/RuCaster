@@ -1,0 +1,19 @@
+[Unit]
+Description=RuCaster NTRIP Caster
+After=network.target
+
+[Service]
+Type=simple
+User=rucaster
+Group=rucaster
+WorkingDirectory=/opt/rucaster/backend
+ExecStart=/opt/rucaster/backend/.venv/bin/python -m uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8001 \
+    --workers 2
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/opt/rucaster/backend/.env
+
+[Install]
+WantedBy=multi-user.target

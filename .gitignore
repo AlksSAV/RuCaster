@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Node
+node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/vite.config.js.timestamp-*
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Секреты и локальные конфиги
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Данные рантайма
+data/
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+*.rtcm
+
+# Локальные черновики (не для публикации)
+docs/drafts/
+
+# Снимки сторонних сервисов — источник требований, не публикуем
+reference-snapshot-*/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ОС
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Логи
+*.log
+logs/

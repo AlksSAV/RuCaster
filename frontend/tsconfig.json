@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"types": ["@sveltejs/kit", "svelte"],
+		"verbatimModuleSyntax": true,
+		"isolatedModules": true,
+		"resolveJsonModule": true,
+		"skipLibCheck": true,
+		"sourceMap": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true
+	},
+	"extends": "./.svelte-kit/tsconfig.json"
+}
