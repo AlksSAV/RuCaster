@@ -77,8 +77,25 @@
   Прогонять точечно (`--follow-imports=skip` по модулям).
 
 ### Q-003. Frontend не собран/не проверен
-- `npm install && npm run check` не выполнялись; нет `src/lib/components/*.svelte`
-  (карта Leaflet, таблицы, KPI-компоненты).
+- **Файл:** `frontend/`
+- **Суть:** `svelte-check` падает (CI-джоб помечен `continue-on-error`), конкретно:
+  - `src/app.html` — отсутствуют плейсхолдеры `%sveltekit.head%` и `%sveltekit.body%`,
+    из-за чего SvelteKit не может загрузить конфиг («Loading Svelte config from Vite
+    config failed: src/app.html is missing %sveltekit.head%»);
+  - `src/lib/i18n/index.ts` — `$lang` не является валидным rune-синтаксисом вне
+    `.svelte`-файла; нужен `get(lang)` из `svelte/store` внутри `t()`;
+  - `src/routes/+layout.svelte` — `<slot />` устарел для Svelte 5, нужен `{@render children()}`;
+  - нет `src/lib/components/*.svelte` (карта Leaflet, таблицы, KPI-компоненты);
+  - нет `package-lock.json` → CI использует `npm install` вместо `npm ci`.
+- **Приоритет:** высокий (блокирует сборку фронтенда).
+- **Статус:** открыт.
+
+### Q-005. CI: фронтенд-джоб не блокирует пайплайн
+- **Файл:** `.github/workflows/ci.yml`
+- **Суть:** `continue-on-error: true` для джоба `frontend` поставлен как временная мера.
+  Убрать после закрытия Q-003, вернуть `npm ci` + кэш по `package-lock.json`.
+- **Приоритет:** средний (не скрывать реальные поломки фронтенда в будущем).
+- **Статус:** открыт.
 
 ### Q-004. Нет Alembic-миграций
 - Сейчас `create_all` в lifespan. Для прода — `alembic init` + первая ревизия.
@@ -94,3 +111,42 @@
 
 ### I-003. Скрипты `.sh` не имеют Windows-аналогов
 - Добавить `scripts/setup.ps1` / `run-dev.ps1` (разработка на Windows).
+
+### I-004. `deploy/Dockerfile.frontend` не проверен на реальной сборке
+- **Файл:** `deploy/Dockerfile.frontend`
+- **Суть:** использует `npm install` + `npm run build`; при отсутствии
+  `package-lock.json` сборка недетерминирована. После Q-003 заменить на `npm ci`.
+- **Приоритет:** низкий.
+
+### I-005. Нет `package-lock.json` в репозитории
+- **Суть:** lock-файл не сгенерирован (`npm install --package-lock-only` не запускался).
+  Без него CI и Docker-сборки не воспроизводимы.
+- **Связано:** Q-003, Q-005, I-004.
+
+### I-006. В репозитории нет `.env` — только `.env.example`
+- **Суть:** это правильно, но README/`scripts/setup.sh` не проверяют, что
+  `JWT_SECRET_KEY` изменён перед запуском. Добавить валидацию на старте
+  (предупреждение, если остался дефолтный плейсхолдер).
+- **Приоритет:** средний (безопасность).
+
+### I-007. Снимки референсов остались локально
+- **Суть:** `reference-snapshot-*/` в `.gitignore`. Если они нужны команде —
+  вынести в отдельный приватный репозиторий; в публичном их быть не должно.
+- **Статус:** решено (исключены из публикации).
+
+### I-008. `docs/architecture-recommendations.md` ссылается на «Референс A/B»
+- **Суть:** адреса источников анонимизированы. При внутреннем использовании
+  сопоставление A/B ↔ конкретные сервисы хранить вне репозитория.
+- **Статус:** решено.
+
+## История релизов
+
+### v0.1.0 — 2026-10-22 (initial scaffold)
+- Первый публичный коммит: `5c383c6`, CI-фикс: `3074f4b`.
+- Backend: NTRIP-сервер (sourcetable v1.0/2.0, SOURCE, client stream),
+  REST API (auth/sources/monitoring/records/proxy/admin/geo), WebSocket-хаб,
+  GNSS-парсеры (RTCM3, NMEA GGA, WGS84↔UTM), 12 тестов, ruff чист.
+- Frontend: SvelteKit-каркас (7 страниц, API/WS-клиенты, i18n RU/EN) — не собран.
+- Deploy: docker-compose, nginx (rate-limit, TLS-ready), systemd-юнит.
+- CI: backend зелёный; frontend `continue-on-error` (Q-003, Q-005).
+- Репозиторий: https://github.com/AlksSAV/RuCaster
