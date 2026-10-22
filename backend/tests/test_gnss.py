@@ -5,9 +5,7 @@ from __future__ import annotations
 from app.gnss.parsers import NmeaGGA, parse_gga, parse_rtcm3, utm_to_wgs84, wgs84_to_utm
 
 # Валидная строка GGA из замера (fix=4, 12 спутников, HDOP 0.8)
-GGA_FIX4 = (
-    "$GNGGA,182839.12,3916.48212,N,08952.49420,W,4,12,0.8,150.0,M,14.0,M,1.0,0000*4A"
-)
+GGA_FIX4 = "$GNGGA,182839.12,3916.48212,N,08952.49420,W,4,12,0.8,150.0,M,14.0,M,1.0,0000*4A"
 
 
 class TestParseGga:
@@ -97,9 +95,7 @@ class TestGeo:
     def test_utm_roundtrip(self):
         lat, lon = 48.8566, 2.3522  # Париж
         utm = wgs84_to_utm(lat, lon)
-        lat2, lon2 = utm_to_wgs84(
-            utm["easting"], utm["northing"], int(utm["zone"]), utm["north"]
-        )
+        lat2, lon2 = utm_to_wgs84(utm["easting"], utm["northing"], int(utm["zone"]), utm["north"])
         # обратное преобразование точное в пределах зоны
         assert abs(lat2 - lat) < 1e-4
         assert abs(lon2 - lon) < 1e-4
