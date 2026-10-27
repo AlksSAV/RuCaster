@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_optional_user
+from app.core.security import hash_password
 from app.db.models import SourceModel, UserModel
 from app.db.schemas import SourceCreate, SourceFullResponse, SourceResponse
 from app.db.session import get_session
@@ -57,7 +58,7 @@ async def create_source(
     source = SourceModel(
         id=str(uuid.uuid4()),
         mountpoint=req.mountpoint,
-        password=req.password,
+        password=hash_password(req.password),
         owner_id=owner_id,
     )
     session.add(source)
