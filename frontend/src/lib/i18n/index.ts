@@ -3,7 +3,7 @@
  * Использование: t('dashboard') или t('sources_count', { n: 5 }).
  */
 
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 
 type Dict = Record<string, string>;
 
@@ -79,7 +79,9 @@ if (typeof localStorage !== 'undefined') {
 }
 
 export function t(key: string, params?: Record<string, string | number>): string {
-	let text = dicts[$lang]?.[key] ?? dicts.en[key] ?? key;
+	// $lang (auto-subscription) доступен только внутри .svelte-компонентов,
+	// поэтому в модуле читаем значение стора явно.
+	let text = dicts[get(lang)]?.[key] ?? dicts.en[key] ?? key;
 	if (params) {
 		for (const [k, v] of Object.entries(params)) {
 			text = text.replaceAll(`{${k}}`, String(v));
