@@ -44,7 +44,7 @@ async def create_source(
     owner_id = "demo-owner"
 
     stmt = select(SourceModel).where(SourceModel.mountpoint == req.mountpoint)
-    if await session.execute(stmt):
+    if (await session.execute(stmt)).scalar_one_or_none():
         raise HTTPException(400, "mountpoint уже существует")
 
     source = SourceModel(
