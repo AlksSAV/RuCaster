@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
@@ -33,6 +33,20 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
+
+
+def decode_access_token(token: str) -> str | None:
+    """Вернуть subject из валидного JWT, иначе None (в т.ч. просроченного)."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except JWTError:
+        return None
+    sub = payload.get("sub")
+    return sub if isinstance(sub, str) else None
 
 
 def check_login_lockout(ip: str) -> bool:

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import (
     check_login_lockout,
     create_access_token,
+    decode_access_token,
     hash_password,
     record_login_attempt,
     verify_password,
@@ -28,9 +29,22 @@ log = logging.getLogger("rucaster.api.auth")
 router = APIRouter()
 
 
-def get_current_user(session: AsyncSession = Depends(get_session)) -> UserModel:
-    """Получить текущего пользователя из cookie."""
-    raise NotImplementedError
+async def get_current_user(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> UserModel:
+    """Зависимость: пользователь из cookie `ntrip_session` (JWT)."""
+    token = request.cookies.get("ntrip_session")
+    if not token:
+        raise HTTPException(401, "не авторизован")
+    username = decode_access_token(token)
+    if not username:
+        raise HTTPException(401, "некорректная или просроченная сессия")
+    stmt = select(UserModel).where(UserModel.username == username)
+    user = (await session.execute(stmt)).scalar_one_or_none()
+    if not user or user.status != "approved":
+        raise HTTPException(401, "пользователь не найден или не одобрен")
+    return user
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -106,6 +120,16 @@ async def logout(response: Response):
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(request: Request, session: AsyncSession = Depends(get_session)):
-    # TODO: извлечь user из cookie
-    raise HTTPException(401, "не авторизован")
+async def me(user: UserModel = Depends(get_current_user)):
+    return UserResponse(
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        status=user.status,
+        quotas={
+            "sources": user.quotas_sources or 0,
+            "substitutions": user.quotas_substitutions or 0,
+        },
+        can_record=bool(user.can_record),
+        created_at=user.created_at,
+    )
