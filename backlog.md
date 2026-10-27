@@ -11,7 +11,7 @@
 - **Как в эталоне:** так же, как было исправлено в `auth.py` (B-001-fix): заменить на
   `if (await session.execute(stmt)).scalar_one_or_none():`.
 - **Приоритет:** высокий (ломает основной сценарий добавления базы).
-- **Статус:** открыт.
+- **Статус:** ✅ закрыто (`414fc17`).
 
 ## Доработки MVP (заглушки, помеченные TODO)
 
@@ -20,21 +20,28 @@
 - **Суть:** зависимость выбрасывает `NotImplementedError` / 401. Нужен разбор cookie
   `ntrip_session` (JWT) → загрузка пользователя из БД.
 - **Блокирует:** все защищённые эндпоинты, привязка владельца к источникам.
+- **Статус:** ✅ закрыто (`b48931b`, `ded4d65`). Реализованы `decode_access_token()`,
+  `get_optional_user()`, `get_current_user()` и `/me` с `Depends`.
 
 ### T-002. Источники: owner захардкожен (`owner_id = "demo-owner"`)
 - **Файл:** `backend/app/api/sources.py:create_source`
 - **Блокируется:** T-001.
+- **Статус:** ✅ закрыто (`3d26e91`). Owner берётся из JWT; `mine`/`editable`
+  считаются по совпадению `owner_id` с ID текущего пользователя.
 
 ### T-003. Мониторинг возвращает пустые заглушки
 - **Файл:** `backend/app/api/monitoring.py`
 - **Суть:** `/status`, `/clients`, `/positions`, `/connections`, `/statistics` не
   подключены к `NtripHub`. Нужен общий стор состояния (hub уже хранит сессии).
 
-### T-004. NTRIP: пароль SOURCE не проверяется корректно
-- **Файл:** `backend/app/ntrip/hub.py:handle_source`
-- **Суть:** пароли источников в БД лежат открытым текстом (`SourceModel.password`),
-  а сравнение идёт через `verify_password` (bcrypt). Нужно либо хешировать пароли
-  источников при создании, либо сравнивать напрямую + constant-time compare.
+### T-004. NTRIP: пароль SOURCE не проверялся корректно
+- **Файл:** `backend/app/ntrip/hub.py:handle_source`, `backend/app/api/sources.py`
+- **Суть:** пароли источников лежали открытым текстом, а сравнение шло через
+  `verify_password` (bcrypt) — ни одна база не могла авторизоваться.
+- **Статус:** ✅ закрыто (`aa84e4a`). Пароль хешируется bcrypt при создании источника,
+  `verify_password` в `hub.py` корректно проверяет.
+- **Остаток:** записи, созданные до фикса (plaintext в БД), не авторизуются —
+  пересоздать вручную; автоматической миграции нет (см. Q-004).
 
 ### T-005. GGA от роверов не парсится из восходящего потока
 - **Файл:** `backend/app/ntrip/hub.py:_read_source_stream`
@@ -66,11 +73,22 @@
 - **Файл:** `backend/app/api/geo.py`
 - **Суть:** подключение к внешним кастерам (httpx), чтение sourcetable/1005/1006.
 
+### T-012. `create_source` не проверяет квоту пользователя
+- **Файл:** `backend/app/api/sources.py:create_source`
+- **Суть:** `UserModel.quotas_sources` нигде не учитывается — можно создать
+  неограниченное число mountpoint'ов. Нужна проверка счётчика источников
+  владельца перед вставкой (403 при превышении).
+- **Приоритет:** средний.
+- **Статус:** открыт (обнаружено при закрытии T-002).
+
 ## Качество
 
 ### Q-001. Тесты покрывают только `gnss/parsers`
 - Добавить: API (httpx AsyncClient + tmp SQLite), NTRIP (сокеты), hub-рассылку,
   security (bcrypt/JWT/лок-аут).
+- **Важно:** `get_current_user` / `get_optional_user` / `decode_access_token` и
+  права на `sources` (T-001, T-002, T-004) закрыты без тестов — проверка только
+  ruff + импорт. Приоритет вырос: эти пути надо покрыть в первую очередь.
 
 ### Q-002. mypy strict ещё не проходит
 - **Файл:** `backend/pyproject.toml` — strict включён, но код не размечен.
@@ -78,24 +96,21 @@
 
 ### Q-003. Frontend не собран/не проверен
 - **Файл:** `frontend/`
-- **Суть:** `svelte-check` падает (CI-джоб помечен `continue-on-error`), конкретно:
-  - `src/app.html` — отсутствуют плейсхолдеры `%sveltekit.head%` и `%sveltekit.body%`,
-    из-за чего SvelteKit не может загрузить конфиг («Loading Svelte config from Vite
-    config failed: src/app.html is missing %sveltekit.head%»);
-  - `src/lib/i18n/index.ts` — `$lang` не является валидным rune-синтаксисом вне
-    `.svelte`-файла; нужен `get(lang)` из `svelte/store` внутри `t()`;
-  - `src/routes/+layout.svelte` — `<slot />` устарел для Svelte 5, нужен `{@render children()}`;
-  - нет `src/lib/components/*.svelte` (карта Leaflet, таблицы, KPI-компоненты);
-  - нет `package-lock.json` → CI использует `npm install` вместо `npm ci`.
+- **Суть:** `svelte-check` падал (CI-джоб помечен `continue-on-error`), конкретно:
+  - ❌ ~~`src/app.html` — отсутствуют плейсхолдеры `%sveltekit.head%` и `%sveltekit.body%`~~ — закрыто (`58e77ea`)
+  - ❌ ~~`src/lib/i18n/index.ts` — `$lang` невалиден вне `.svelte`-файла~~ — закрыто (`58e77ea`)
+  - ❌ ~~`src/routes/+layout.svelte` — `<slot />` устарел для Svelte 5~~ — закрыто (`58e77ea`)
+  - ✅ нет `src/lib/components/*.svelte` (карта Leaflet, таблицы, KPI-компоненты) — **в работе**
+  - ❌ ~~`package-lock.json` отсутствует~~ — закрыто (`58e77ea`)
 - **Приоритет:** высокий (блокирует сборку фронтенда).
-- **Статус:** открыт.
+- **Статус:** ✅ `svelte-check` и `vite build` проходят (0 ошибок). Осталось реализовать компоненты (Q-003-остаток).
 
 ### Q-005. CI: фронтенд-джоб не блокирует пайплайн
 - **Файл:** `.github/workflows/ci.yml`
 - **Суть:** `continue-on-error: true` для джоба `frontend` поставлен как временная мера.
   Убрать после закрытия Q-003, вернуть `npm ci` + кэш по `package-lock.json`.
 - **Приоритет:** средний (не скрывать реальные поломки фронтенда в будущем).
-- **Статус:** открыт.
+- **Статус:** ⏳ ожидает Q-003-остаток (компоненты). `npm ci` уже возможен благодаря I-005.
 
 ### Q-004. Нет Alembic-миграций
 - Сейчас `create_all` в lifespan. Для прода — `alembic init` + первая ревизия.
@@ -122,6 +137,7 @@
 - **Суть:** lock-файл не сгенерирован (`npm install --package-lock-only` не запускался).
   Без него CI и Docker-сборки не воспроизводимы.
 - **Связано:** Q-003, Q-005, I-004.
+- **Статус:** закрыт (`58e77ea`) — lock-файл закоммичен.
 
 ### I-006. В репозитории нет `.env` — только `.env.example`
 - **Суть:** это правильно, но README/`scripts/setup.sh` не проверяют, что
@@ -141,12 +157,20 @@
 
 ## История релизов
 
-### v0.1.0 — 2026-10-22 (initial scaffold)
-- Первый публичный коммит: `5c383c6`, CI-фикс: `3074f4b`.
-- Backend: NTRIP-сервер (sourcetable v1.0/2.0, SOURCE, client stream),
-  REST API (auth/sources/monitoring/records/proxy/admin/geo), WebSocket-хаб,
-  GNSS-парсеры (RTCM3, NMEA GGA, WGS84↔UTM), 12 тестов, ruff чист.
-- Frontend: SvelteKit-каркас (7 страниц, API/WS-клиенты, i18n RU/EN) — не собран.
-- Deploy: docker-compose, nginx (rate-limit, TLS-ready), systemd-юнит.
-- CI: backend зелёный; frontend `continue-on-error` (Q-003, Q-005).
+### v0.1.1 — 2026-10-27 (auth, sources, frontend build)
+- Backend:
+  - B-001: `create_source` — исправлена проверка уникальности mountpoint
+    (`scalar_one_or_none()` вместо `execute()` truthiness).
+  - T-001: JWT-аутентификация по cookie `ntrip_session` — `get_current_user`,
+    `get_optional_user`, `/api/auth/me`.
+  - T-002: `create_source` использует реальный `owner_id` из JWT, `mine`/`editable`
+    считаются по совпадению.
+  - T-004: пароль источника хешируется bcrypt при создании, корректно проверяется
+    в NTRIP SOURCE-сессии.
+- Frontend:
+  - Q-003 (основное): `app.html` — плейсхолдеры SvelteKit, `i18n` — `get(lang)`
+    вместо `$lang`, `+layout.svelte` — `{@render children()}`.
+  - I-005: `package-lock.json` закоммичен.
+  - `vite build` и `svelte-check` проходят (0 ошибок).
+- CI: frontend-джоб пока `continue-on-error` (ожидает компоненты Q-003-остаток).
 - Репозиторий: https://github.com/AlksSAV/RuCaster
