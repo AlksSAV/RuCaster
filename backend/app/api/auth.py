@@ -29,21 +29,32 @@ log = logging.getLogger("rucaster.api.auth")
 router = APIRouter()
 
 
+async def get_optional_user(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> UserModel | None:
+    """Как get_current_user, но для анонимных запросов возвращает None вместо 401."""
+    token = request.cookies.get("ntrip_session")
+    if not token:
+        return None
+    username = decode_access_token(token)
+    if not username:
+        return None
+    stmt = select(UserModel).where(UserModel.username == username)
+    user = (await session.execute(stmt)).scalar_one_or_none()
+    if not user or user.status != "approved":
+        return None
+    return user
+
+
 async def get_current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> UserModel:
     """Зависимость: пользователь из cookie `ntrip_session` (JWT)."""
-    token = request.cookies.get("ntrip_session")
-    if not token:
+    user = await get_optional_user(request, session)
+    if user is None:
         raise HTTPException(401, "не авторизован")
-    username = decode_access_token(token)
-    if not username:
-        raise HTTPException(401, "некорректная или просроченная сессия")
-    stmt = select(UserModel).where(UserModel.username == username)
-    user = (await session.execute(stmt)).scalar_one_or_none()
-    if not user or user.status != "approved":
-        raise HTTPException(401, "пользователь не найден или не одобрен")
     return user
 
 
