@@ -47,13 +47,22 @@ async def create_source(
     user: UserModel = Depends(get_optional_user),
 ):
     """Создать новый источник (базу)."""
-    # Если пользователь не авторизован — остаёмся на "demo-owner",
-    # чтобы публичный доступ не падал, но в реальности ожидается JWT.
     owner_id = user.id if user else "demo-owner"
 
     stmt = select(SourceModel).where(SourceModel.mountpoint == req.mountpoint)
     if (await session.execute(stmt)).scalar_one_or_none():
         raise HTTPException(400, "mountpoint уже существует")
+
+    # T-012: проверка квоты источников пользователя
+    if user:
+        count_stmt = select(SourceModel).where(SourceModel.owner_id == user.id)
+        count = len((await session.execute(count_stmt)).all())
+        quota = user.quotas_sources or 0
+        if count >= quota:
+            raise HTTPException(
+                403,
+                f"превышена квота источников: {count}/{quota}",
+            )
 
     source = SourceModel(
         id=str(uuid.uuid4()),
