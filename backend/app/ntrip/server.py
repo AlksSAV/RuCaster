@@ -153,7 +153,7 @@ class NtripServer:
                 await self._hub.handle_sourcetable(headers, writer)
                 return
             # Стрим роверу
-            await self._hub.handle_client(target.lstrip("/"), headers, writer, peer)
+            await self._hub.handle_client(target.lstrip("/"), headers, reader, writer, peer)
             return
 
         writer.write(AUTH_REQUIRED.encode())
