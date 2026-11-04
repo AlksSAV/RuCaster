@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import time
 
-from app.ntrip.hub import NtripHub
+from app.gnss.parsers import parse_gga
+from app.ntrip.hub import NtripHub, extract_nmea_lines, position_from_gga
 
 
 def _make_client_session(
@@ -138,3 +139,104 @@ class TestClientsSnapshot:
         _make_client_session(hub, mountpoint="A", peer="1.1.1.2:2")
         _make_client_session(hub, mountpoint="B", peer="1.1.1.3:3")
         assert hub.clients_per_mountpoint() == {"A": 2, "B": 1}
+
+
+GGA_FIX4 = "$GNGGA,182839.12,3916.48212,N,08952.49420,W,4,12,0.8,150.0,M,14.0,M,1.0,0000*4A"
+
+
+class TestExtractNmeaLines:
+    def test_complete_lines(self):
+        buf = bytearray(b"$GPGGA,1,2\r\n$GNGGA,3,4\r\n")
+        lines = extract_nmea_lines(buf)
+        assert len(lines) == 2
+        assert lines[0].startswith("$GPGGA")
+        assert buf == b""  # полный буфер очищается
+
+    def test_partial_line_stays_in_buffer(self):
+        buf = bytearray(b"$GNGGA,1234" )
+        assert extract_nmea_lines(buf) == []
+        assert bytes(buf) == b"$GNGGA,1234"
+        # достраиваем строку — теперь она выделяется
+        buf.extend(b",5678\r\n")
+        lines = extract_nmea_lines(buf)
+        assert len(lines) == 1
+        assert lines[0] == "$GNGGA,1234,5678"
+
+    def test_line_split_across_chunks(self):
+        """GGA, пришедший двумя кусками, должен распарситься целиком."""
+        buf = bytearray()
+        buf.extend(GGA_FIX4[:20].encode())
+        assert extract_nmea_lines(buf) == []
+        buf.extend(GGA_FIX4[20:].encode() + b"\r\n")
+        lines = extract_nmea_lines(buf)
+        assert len(lines) == 1
+        gga = parse_gga(lines[0])
+        assert gga is not None
+        assert gga.fix_quality == 4
+
+    def test_short_lines_dropped(self):
+        buf = bytearray(b"\r\nx\r\n" + GGA_FIX4.encode() + b"\r\n")
+        lines = extract_nmea_lines(buf)
+        assert lines == [GGA_FIX4]
+
+    def test_overflow_buffer_cleared(self):
+        """Поток без переводов строк (например чистый RTCM) не должен растить буфер вечно."""
+        buf = bytearray(b"\xd3" * 2000)
+        assert extract_nmea_lines(buf) == []
+        assert len(buf) == 0
+
+
+class TestPositionFromGga:
+    def test_fields(self):
+        gga = parse_gga(GGA_FIX4)
+        assert gga is not None
+        pos = position_from_gga(gga)
+        assert pos["fix_quality"] == 4
+        assert pos["num_sats"] == 12
+        assert pos["hdop"] == 0.8
+        assert pos["altitude"] == 150.0
+        assert pos["geoid_sep"] == 14.0
+        assert pos["age"] == 1.0
+        assert abs(pos["latitude"] - 39.274702) < 1e-4
+        assert abs(pos["longitude"] + 89.874903) < 1e-4
+
+
+class TestGgaUpdatesSession:
+    """Сквозная проверка пути T-005: строка GGA -> позиция в снимках мониторинга."""
+
+    def test_session_position_updated(self):
+        hub = NtripHub()
+        s = _make_client_session(hub)
+        # так же, как это делает цикл чтения в handle_client
+        buf = bytearray(GGA_FIX4.encode() + b"\r\n")
+        for line in extract_nmea_lines(buf):
+            gga = parse_gga(line)
+            if gga is not None:
+                s["position"] = position_from_gga(gga)
+                s["position_at"] = time.time()
+
+        positions = hub.get_positions()
+        assert len(positions) == 1
+        p = positions[0]
+        assert abs(p["latitude"] - 39.274702) < 1e-4
+        assert p["fix_quality"] == 4
+        assert p["updated_at"] is not None
+        assert p["age_seconds"] is not None and p["age_seconds"] < 2.0
+
+        clients = hub.get_clients()
+        assert clients[0]["latitude"] is not None
+        assert clients[0]["num_sats"] == 12
+
+    def test_no_fix_gga_does_not_update(self):
+        """GGA без фиксации (quality=0) не должен перезаписывать позицию."""
+        hub = NtripHub()
+        s = _make_client_session(hub)
+        no_fix = "$GNGGA,120000.00,5500.00000,N,03700.00000,E,0,00,99.9,0.0,M,0.0,M,,"
+        for line in extract_nmea_lines(bytearray(no_fix.encode() + b"\r\n")):
+            gga = parse_gga(line)
+            if gga is not None:
+                s["position"] = position_from_gga(gga)
+                s["position_at"] = time.time()
+        assert s["position"] is None
+        assert s["position_at"] is None
+        assert hub.get_positions()[0]["latitude"] is None

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.core.security import verify_password
 from app.db.models import SourceModel, UserModel
 from app.db.session import session_scope
+from app.gnss.parsers import NmeaGGA, parse_gga
 from app.ntrip.server import (
     AUTH_REQUIRED,
     NTRIP_OK,
@@ -59,6 +60,45 @@ def _peer_ip(peer: str) -> str:
         return peer
     head, sep, tail = peer.rpartition(":")
     return head if sep and tail.isdigit() else peer
+
+
+# Максимальная длина NMEA-строки в буфере восходящего потока ровера
+_MAX_NMEA_LINE = 1024
+
+
+def extract_nmea_lines(buf: bytearray) -> list[str]:
+    """Выделить полные NMEA-строки из буфера, остаток оставить в буфере.
+
+    Строки короче 6 символов отбрасываются, переполненный буфер очищается
+    (поток может быть не NMEA — например RTCM, тогда байты просто копятся).
+    """
+    lines: list[str] = []
+    while True:
+        idx = buf.find(b"\n")
+        if idx < 0:
+            break
+        raw = bytes(buf[:idx])
+        del buf[: idx + 1]
+        line = raw.decode(errors="replace").strip()
+        if len(line) >= 6:
+            lines.append(line)
+    if len(buf) > _MAX_NMEA_LINE:
+        buf.clear()
+    return lines
+
+
+def position_from_gga(gga: NmeaGGA) -> dict:
+    """Позиция для мониторинга из распарсенного GGA."""
+    return {
+        "latitude": gga.latitude,
+        "longitude": gga.longitude,
+        "fix_quality": gga.fix_quality,
+        "num_sats": gga.num_sats,
+        "hdop": gga.hdop,
+        "altitude": gga.altitude,
+        "geoid_sep": gga.geoid_sep,
+        "age": gga.age,
+    }
 
 
 class NtripHub:
@@ -263,11 +303,25 @@ class NtripHub:
         self._total_client_connections += 1
         log.info("Client connected: %s (%s) to %s", peer, user, mountpoint)
 
-        # Восходящий поток ровера (GGA/RTCM) здесь только считаем: разбор позиции — T-005
+        # Восходящий поток ровера: буферизуем, ищем NMEA-строки, парсим GGA
+        buf = bytearray()
         try:
             while True:
-                if not await reader.read(4096):
+                chunk = await reader.read(4096)
+                if not chunk:
                     break
+                buf.extend(chunk)
+                for line in extract_nmea_lines(buf):
+                    gga = parse_gga(line)
+                    if gga is not None:
+                        client_session["position"] = position_from_gga(gga)
+                        client_session["position_at"] = time.time()
+                        log.debug(
+                            "GGA from %s (%s) at %s: (%.6f, %.6f) q=%d sats=%d",
+                            peer, user, mountpoint,
+                            gga.latitude, gga.longitude,
+                            gga.fix_quality, gga.num_sats,
+                        )
         except (ConnectionResetError, BrokenPipeError):
             pass
         finally:
