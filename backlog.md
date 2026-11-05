@@ -71,6 +71,9 @@
 ### T-010. Admin API — заглушки 501
 - **Файл:** `backend/app/api/admin.py`
 - **Суть:** approve/reject/block/quota + проверка роли admin.
+- **Статус:** ✅ закрыто. `require_admin` (роль admin из JWT), список пользователей,
+  approve/reject/block/unblock/delete/quota/can-record. Защита: нельзя трогать свою
+  учётку; удаление только при отсутствии источников у пользователя (409).
 
 ### T-011. Гео-утилиты: remote-station / remote-mountpoints — заглушки
 - **Файл:** `backend/app/api/geo.py`
