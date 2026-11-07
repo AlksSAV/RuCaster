@@ -15,33 +15,32 @@ class WsHub:
     """Централизованный хаб WebSocket-подключений."""
 
     def __init__(self) -> None:
-        self._clients: list[WebSocket] = []
+        self._clients: dict[WebSocket, str] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, ws: WebSocket) -> None:
+    async def connect(self, ws: WebSocket, username: str = "") -> None:
         await ws.accept()
         async with self._lock:
-            self._clients.append(ws)
-        log.info("WebSocket client connected. Total: %d", len(self._clients))
+            self._clients[ws] = username
+        log.info("WebSocket client connected: %s. Total: %d", username, len(self._clients))
 
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:
-            if ws in self._clients:
-                self._clients.remove(ws)
+            self._clients.pop(ws, None)
         log.info("WebSocket client disconnected. Total: %d", len(self._clients))
 
     async def broadcast(self, data: dict) -> None:
-        """Отправить сообщение всем подключённым клиентам."""
-        payload = json.dumps(data, default=str).encode("utf-8")
+        """Отправить сообщение всем подключённым клиентам (текстовый JSON-кадр)."""
+        payload = json.dumps(data, default=str)
         async with self._lock:
             disconnected = []
             for ws in self._clients:
                 try:
-                    await ws.send_bytes(payload)
+                    await ws.send_text(payload)
                 except (WebSocketDisconnect, RuntimeError):
                     disconnected.append(ws)
             for ws in disconnected:
-                self._clients.remove(ws)
+                self._clients.pop(ws, None)
 
     async def send_to(self, ws: WebSocket, data: dict) -> None:
         """Отправить сообщение конкретному клиенту."""

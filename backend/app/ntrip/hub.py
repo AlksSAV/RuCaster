@@ -22,6 +22,7 @@ from app.ntrip.server import (
     SOURCE_UNAUTHORIZED,
     build_sourcetable,
 )
+from app.ws.hub import ws_hub
 
 log = logging.getLogger("rucaster.ntrip")
 
@@ -134,6 +135,15 @@ class NtripHub:
     def _register_rejection(self) -> None:
         self._rejected += 1
 
+    # ---------- WebSocket-события (T-006) ----------
+
+    async def _emit(self, type: str, data: dict) -> None:
+        """Push-событие в дашборд. Ошибки WS не должны влиять на NTRIP-сессии."""
+        try:
+            await ws_hub.broadcast({"type": type, "data": data})
+        except Exception:  # noqa: BLE001 — broad by design: push is best-effort
+            log.debug("WS broadcast failed for %s", type, exc_info=True)
+
     # ---------- NTRIP: sourcetable ----------
 
     async def handle_sourcetable(
@@ -199,6 +209,10 @@ class NtripHub:
         }
 
         log.info("Source connected: %s from %s", mountpoint, peer)
+        await self._emit(
+            "source_connected",
+            {"mountpoint": mountpoint, "peer": peer},
+        )
         await self._read_source_stream(session_id, mountpoint, reader)
 
     async def _read_source_stream(
@@ -225,6 +239,14 @@ class NtripHub:
                 session.get("conn"), bytes_received=session.get("bytes_received", 0)
             )
             await self._cleanup_client_sessions(mountpoint)
+            await self._emit(
+                "source_disconnected",
+                {
+                    "mountpoint": mountpoint,
+                    "peer": session.get("peer"),
+                    "bytes_received": session.get("bytes_received", 0),
+                },
+            )
 
     # ---------- NTRIP: клиент (ровер) ----------
 
@@ -302,6 +324,10 @@ class NtripHub:
         self._client_sessions.setdefault(mountpoint, []).append(client_session)
         self._total_client_connections += 1
         log.info("Client connected: %s (%s) to %s", peer, user, mountpoint)
+        await self._emit(
+            "client_connected",
+            {"mountpoint": mountpoint, "user": user, "peer": peer},
+        )
 
         # Восходящий поток ровера: буферизуем, ищем NMEA-строки, парсим GGA
         buf = bytearray()
@@ -327,6 +353,15 @@ class NtripHub:
         finally:
             self._remove_client_session(mountpoint, client_session)
             log.info("Client disconnected: %s (%s) from %s", peer, user, mountpoint)
+            await self._emit(
+                "client_disconnected",
+                {
+                    "mountpoint": mountpoint,
+                    "user": user,
+                    "peer": peer,
+                    "bytes_sent": client_session.get("bytes_sent", 0),
+                },
+            )
 
     def _remove_client_session(self, mountpoint: str, client_session: dict) -> None:
         clients = self._client_sessions.get(mountpoint)

@@ -12,6 +12,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app.api import router as api_router
 from app.core.config import settings
+from app.core.security import decode_access_token
 from app.db.session import close_db, init_db
 from app.ntrip.hub import NtripHub
 from app.ntrip.server import NtripServer
@@ -85,13 +86,24 @@ app.include_router(api_router)
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    await ws_hub.connect(ws)
+    # T-006: авторизация по JWT из cookie ntrip_session
+    token = ws.cookies.get("ntrip_session")
+    username = decode_access_token(token) if token else None
+    if not username:
+        # 4401 — не авторизован; фронтенд не должен переподключаться
+        await ws.close(code=4401)
+        return
+
+    await ws_hub.connect(ws, username=username)
     try:
         while True:
             data = await ws.receive_text()
-            # echo back для теста, дальше сюда придут команды
-            await ws.send_text(data)
+            # Команды клиента: только ping (keep-alive). Прочее игнорируем.
+            if data.strip() == "ping":
+                await ws.send_text('{"type":"pong"}')
     except WebSocketDisconnect:
+        pass
+    finally:
         await ws_hub.disconnect(ws)
 
 

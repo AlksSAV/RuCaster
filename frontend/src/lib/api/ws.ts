@@ -38,9 +38,13 @@ function connect() {
 		}
 	};
 
-	socket.onclose = () => {
+	socket.onclose = (event) => {
 		wsConnected.set(false);
 		socket = null;
+		// 4401 — не авторизован: переподключение бессмысленно до логина
+		if (event.code === 4401) {
+			return;
+		}
 		// экспоненциальная задержка до 30 с
 		if (!reconnectTimer) {
 			reconnectTimer = setTimeout(() => {

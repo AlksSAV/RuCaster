@@ -93,6 +93,7 @@ async def login(
         httponly=True,
         max_age=60 * 60 * 24 * 7,
         path="/",
+        domain="localhost",
         samesite="lax",
     )
 

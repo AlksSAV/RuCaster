@@ -1,17 +1,19 @@
 <script lang="ts">
-	let status = {
+	import { onWs, wsConnected } from '$lib/api/ws';
+
+	let error = $state(false);
+
+	let status = $state({
 		running: false,
 		sources: 0,
 		total_clients: 0,
 		rovers: 0,
 		rate: '—',
 		totalBytes: 0
-	};
-
-	let error = $state(false);
+	});
 
 	async function loadStatus() {
-		if (document.hidden) return;
+		if (typeof document !== 'undefined' && document.hidden) return;
 		try {
 			const res = await fetch('/status', { credentials: 'include' });
 			if (!res.ok) throw new Error('not ok');
@@ -25,6 +27,20 @@
 		}
 	}
 
+	// T-006: мгновенный refresh по push-событиям; polling остаётся fallback
+	$effect(() => {
+		return onWs((msg) => {
+			if (
+				msg.type === 'source_connected' ||
+				msg.type === 'source_disconnected' ||
+				msg.type === 'client_connected' ||
+				msg.type === 'client_disconnected'
+			) {
+				loadStatus();
+			}
+		});
+	});
+
 	$effect(() => {
 		loadStatus();
 		const timer = setInterval(loadStatus, 5000);
@@ -34,7 +50,10 @@
 
 <section class="kpi-row">
 	<div class="card">
-		<div class="label">Status</div>
+		<div class="label">
+			Status
+			{#if $wsConnected}<span class="live" title="WebSocket connected">● live</span>{/if}
+		</div>
 		<div class="value" class:good={status.running} class:bad={error}>
 			{error ? 'NO LINK' : status.running ? 'ONLINE' : 'OFFLINE'}
 		</div>
@@ -72,6 +91,12 @@
 	.label {
 		font-size: 12px;
 		color: var(--ink-2, #52514e);
+	}
+	.live {
+		margin-left: 6px;
+		font-size: 10.5px;
+		font-weight: 600;
+		color: var(--good, #0ca30c);
 	}
 	.value {
 		font-size: 28px;

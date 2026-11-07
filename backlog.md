@@ -55,6 +55,12 @@
 - **Файл:** `backend/app/main.py:ws_endpoint`
 - **Суть:** нет авторизации по JWT и нет push-событий из hub
   (source online/offline, client connected, stats).
+- **Статус:** ✅ закрыто. `/ws` авторизуется по cookie `ntrip_session` (JWT),
+  при отсутствии/невалидности — close 4401 (фронт не переподключается).
+  Из `NtripHub` пушатся события `source_connected/disconnected`,
+  `client_connected/disconnected` (текстовые JSON-кадры `{type, data}`);
+  ошибки WS не влияют на NTRIP-сессии. Дашборд подписан через `onWs`
+  (мгновенный refresh + polling 5 с как fallback), индикатор «● live».
 
 ### T-007. Запись статики (records) — заглушки 501
 - **Файл:** `backend/app/api/records.py`
