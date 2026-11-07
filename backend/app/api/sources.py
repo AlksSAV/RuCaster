@@ -5,10 +5,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_optional_user
+from app.api.auth import get_current_user, get_optional_user
 from app.core.security import hash_password
 from app.db.models import SourceModel, UserModel
 from app.db.schemas import SourceCreate, SourceFullResponse, SourceResponse
@@ -44,25 +44,28 @@ async def list_sources(
 async def create_source(
     req: SourceCreate,
     session: AsyncSession = Depends(get_session),
-    user: UserModel = Depends(get_optional_user),
+    user: UserModel = Depends(get_current_user),
 ):
     """Создать новый источник (базу)."""
-    owner_id = user.id if user else "demo-owner"
+    owner_id = user.id
 
     stmt = select(SourceModel).where(SourceModel.mountpoint == req.mountpoint)
     if (await session.execute(stmt)).scalar_one_or_none():
         raise HTTPException(400, "mountpoint уже существует")
 
     # T-012: проверка квоты источников пользователя
-    if user:
-        count_stmt = select(SourceModel).where(SourceModel.owner_id == user.id)
-        count = len((await session.execute(count_stmt)).all())
-        quota = user.quotas_sources or 0
-        if count >= quota:
-            raise HTTPException(
-                403,
-                f"превышена квота источников: {count}/{quota}",
-            )
+    count_stmt = (
+        select(func.count())
+        .select_from(SourceModel)
+        .where(SourceModel.owner_id == user.id)
+    )
+    count = (await session.execute(count_stmt)).scalar_one()
+    quota = user.quotas_sources or 0
+    if count >= quota:
+        raise HTTPException(
+            403,
+            f"превышена квота источников: {count}/{quota}",
+        )
 
     source = SourceModel(
         id=str(uuid.uuid4()),

@@ -80,14 +80,13 @@ def _make_app(session: AsyncSession, user: UserModel) -> FastAPI:
 
     app.dependency_overrides[_orig_get_session] = _override_get_session
 
-    # Переопределяем get_optional_user — отдаём тестового пользователя
+    # Переопределяем get_current_user — POST /api/sources требует авторизацию (T-012)
     async def _override_user():
         return user
 
-    # get_optional_user импортируется в sources.py через auth.py,
-    # где он используется в Depends. Заменяем по имени.
-    from app.api.auth import get_optional_user
+    from app.api.auth import get_current_user, get_optional_user
 
+    app.dependency_overrides[get_current_user] = _override_user
     app.dependency_overrides[get_optional_user] = _override_user
 
     # Подменяем хеш-хелпер
