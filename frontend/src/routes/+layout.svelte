@@ -11,6 +11,7 @@
 			<nav>
 				<a href="/dashboard">Dashboard</a>
 				<a href="/stations">Stations</a>
+				<a href="/map">Map</a>
 				<a href="/admin">Admin</a>
 				<a href="/settings">Settings</a>
 			</nav>
