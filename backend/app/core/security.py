@@ -12,7 +12,7 @@ from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Кэш блокировки входа: {ip: {"attempts": int, "locked_until": float}}
+# Кэш блокировки входа: {ip: {"attempts": int, "first_at": float, "locked_until": float}}
 _login_attempts: dict[str, dict] = {}
 
 
@@ -50,20 +50,26 @@ def decode_access_token(token: str) -> str | None:
 
 
 def check_login_lockout(ip: str) -> bool:
-    """Возвращает True если вход разрешён, False если заблокирован."""
+    """Возвращает True если вход разрешён, False если IP заблокирован."""
     entry = _login_attempts.get(ip)
-    if entry and time.time() < entry["locked_until"]:
-        return False
-    if entry:
-        entry["attempts"] = 0
-    return True
+    if not entry:
+        return True
+    return time.time() >= entry["locked_until"]
 
 
 def record_login_attempt(ip: str, success: bool) -> None:
-    if ip not in _login_attempts:
-        _login_attempts[ip] = {"attempts": 0, "locked_until": 0.0}
-    entry = _login_attempts[ip]
-    if not success:
-        entry["attempts"] += 1
-        if entry["attempts"] >= settings.max_login_attempts:
-            entry["locked_until"] = time.time() + settings.login_lockout_seconds
+    now = time.time()
+    if success:
+        _login_attempts.pop(ip, None)
+        return
+    entry = _login_attempts.get(ip)
+    if entry is None:
+        entry = {"attempts": 0, "first_at": now, "locked_until": 0.0}
+        _login_attempts[ip] = entry
+    elif now - entry["first_at"] > settings.login_lockout_seconds:
+        # Окно неудач истекло — считаем заново
+        entry["attempts"] = 0
+        entry["first_at"] = now
+    entry["attempts"] += 1
+    if entry["attempts"] >= settings.max_login_attempts:
+        entry["locked_until"] = now + settings.login_lockout_seconds
