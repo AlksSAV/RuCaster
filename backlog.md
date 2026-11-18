@@ -87,6 +87,17 @@
 ### T-009. Анализ RTCM-потока не реализован
 - **Модуль:** `backend/app/services/` (пусто)
 - **Суть:** окно 60 с, счётчики кадров/CRC, типы сообщений, вердикт rtk_ready (pyrtcm).
+- **Статус:** ✅ закрыто. `app/services/rtcm_analysis.py`: `RtcmAnalyzer` —
+  скользящее окно 60 с (deque), счётчики frames_ok/crc_errors/junk_bytes,
+  статистика по типам сообщений (count, rate_hz, avg_size, last_seen),
+  категории созвездий, вердикт `rtk_ready` из 5 проверок (координаты станции
+  1005/1006, наблюдения MSM/legacy, эфемериды, чистый CRC, источник онлайн).
+  `Hub.feed_rtcm` подключён к `_read_source_stream`; API
+  `GET /analysis/{mountpoint}` (владелец/админ; 404/403/409).
+  Попутно исправлен парсер: RTCM3 CRC — 3 байта (CRC-24Q), а не 2; теперь
+  реально валидируется (`crc24q` в `gnss/parsers.py`, сверен с pyrtcm).
+  Полное декодирование содержимого (спутники, CNR, ARP станции) — отложено.
+  Тесты: `test_rtcm_analysis.py` (17), обновлены `test_gnss.py`.
 
 ### T-010. Admin API — заглушки 501
 - **Файл:** `backend/app/api/admin.py`

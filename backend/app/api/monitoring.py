@@ -1,10 +1,14 @@
-"""Monitoring API: status, clients, positions, connections, statistics."""
+"""Monitoring API: status, clients, positions, connections, statistics, analysis."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
 from app.core.config import settings
+from app.db.models import SourceModel, UserModel
 from app.db.schemas import (
     ClientResponse,
     ConnectionResponse,
@@ -13,6 +17,7 @@ from app.db.schemas import (
     StatusResponse,
     StatusSource,
 )
+from app.db.session import get_session
 
 router = APIRouter()
 
@@ -96,3 +101,29 @@ async def get_statistics(request: Request):
     """Накопительная статистика."""
     stats = await request.app.state.ctx.ntrip_hub.get_statistics()
     return StatisticsResponse(**stats)
+
+
+@router.get("/analysis/{mountpoint}")
+async def get_analysis(
+    mountpoint: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: UserModel = Depends(get_current_user),
+):
+    """RTCM-анализ потока источника за скользящее окно 60 с (T-009).
+
+    Доступен владельцу источника или админу. 404 — источник не существует,
+    409 — поток ещё не наблюдался (окно пусто).
+    """
+    stmt = select(SourceModel).where(SourceModel.mountpoint == mountpoint)
+    source = (await session.execute(stmt)).scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "источник не найден")
+    if source.owner_id != user.id and user.role != "admin":
+        raise HTTPException(403, "нет доступа к анализу чужого источника")
+
+    hub = request.app.state.ctx.ntrip_hub
+    result = hub.get_analysis(mountpoint)
+    if result is None:
+        raise HTTPException(409, "поток ещё не наблюдался")
+    return result

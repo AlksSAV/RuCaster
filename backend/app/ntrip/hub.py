@@ -22,6 +22,7 @@ from app.ntrip.server import (
     SOURCE_UNAUTHORIZED,
     build_sourcetable,
 )
+from app.services.rtcm_analysis import RtcmAnalyzer
 from app.ws.hub import ws_hub
 
 log = logging.getLogger("rucaster.ntrip")
@@ -112,6 +113,8 @@ class NtripHub:
         self._rejected = 0
         # Накопительные счётчики (не зависят от размера кольцевого журнала)
         self._total_client_connections = 0
+        # RTCM-анализ по mountpoint (T-009)
+        self._analyzers: dict[str, RtcmAnalyzer] = {}
 
     # ---------- учёт в журнале ----------
 
@@ -169,6 +172,20 @@ class NtripHub:
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+
+    def _get_analyzer(self, mountpoint: str) -> RtcmAnalyzer:
+        return self._analyzers.setdefault(mountpoint, RtcmAnalyzer())
+
+    def feed_rtcm(self, mountpoint: str, data: bytes) -> None:
+        """Просить анализатор обработать чанк RTCM-потока (вызывать из _read_source_stream)."""
+        self._get_analyzer(mountpoint).feed(data)
+
+    def get_analysis(self, mountpoint: str) -> dict | None:
+        """Снимок анализа mountpoint (T-009) или None, если сбор не велся."""
+        analyzer = self._analyzers.get(mountpoint)
+        if analyzer is None:
+            return None
+        return analyzer.report(connected=self.is_source_connected(mountpoint))
 
     # ---------- NTRIP: источник (база) ----------
 
@@ -230,6 +247,7 @@ class NtripHub:
                     break
                 session["bytes_received"] += len(data)
                 session["last_seen"] = datetime.now(UTC)
+                self.feed_rtcm(mountpoint, data)  # T-009: анализ RTCM-потока
                 await self._broadcast_to_clients(mountpoint, data)
         except (ConnectionResetError, BrokenPipeError):
             log.info("Source disconnected: %s", session_id)
@@ -422,6 +440,10 @@ class NtripHub:
             if session["mountpoint"] == mountpoint:
                 return session
         return None
+
+    def is_source_connected(self, mountpoint: str) -> bool:
+        """Есть ли активная SOURCE-сессия у mountpoint."""
+        return self._source_session_of(mountpoint) is not None
 
     def _all_client_sessions(self) -> list[dict]:
         return [c for clients in self._client_sessions.values() for c in clients]
