@@ -84,30 +84,59 @@ class RtcFrame:
     data: bytes
 
 
+def crc24q(data: bytes) -> int:
+    """CRC-24Q (полином RTKLIB 0x1864CFB), инициализация 0, без инверсии.
+
+    Используется для контрольной суммы RTCM3. Совпадает с pyrtcm.calc_crc24q,
+    но не требует внешней зависимости.
+    """
+    crc = 0
+    for byte in data:
+        crc ^= byte << 16
+        for _ in range(8):
+            crc <<= 1
+            if crc & 0x1000000:
+                crc ^= 0x1864CFB
+        crc &= 0xFFFFFF
+    return crc
+
+
 def parse_rtcm3(data: bytes) -> list[RtcFrame]:
     """Парсить RTCM3 кадры из байтового потока.
 
-    RTCM3 формат: 0xD3 + length(2 байта) + data(length) + CRC(2 байта)
+    RTCM3 формат: 0xD3 + length(2 байта) + payload(length) + CRC-24Q(3 байта).
+    length — размер payload (включая 3-байтный заголовок сообщения).
+    Кадры с неверным CRC помечаются crc_ok=False и возвращаются (для статистики).
     """
     frames: list[RtcFrame] = []
     i = 0
-    while i < len(data) - 3:
+    while i < len(data):
         if data[i] != 0xD3:
             i += 1
             continue
 
-        if i + 3 >= len(data):
+        # Нужен минимум заголовок (3) + payload + CRC (3)
+        if i + 3 > len(data):
             break
 
         length = (data[i + 1] << 8) | data[i + 2]
-        if length < 7 or i + 3 + length > len(data):
+        if length < 7 or length > 0x3FF:
+            # недостоверная длина — сдвигаемся на 1 байт и пробуем снова
             i += 1
             continue
 
-        frame_data = data[i + 3 : i + 3 + length]
+        payload_end = i + 3 + length
+        crc_end = payload_end + 3
+        if crc_end > len(data):
+            # кадр обрезан — не хватает payload или CRC
+            break
+
+        frame_data = data[i + 3 : payload_end]
         # 12-битный тип сообщения: первый байт + старшие 4 бита второго
         msg_type = (frame_data[0] << 4) | (frame_data[1] >> 4)
-        crc_ok = True  # TODO: validate CRC
+        # CRC-24Q считается по заголовку (0xD3+length) и payload, без CRC-байтов
+        stored = (data[payload_end] << 16) | (data[payload_end + 1] << 8) | data[payload_end + 2]
+        crc_ok = crc24q(data[i:payload_end]) == stored
 
         frames.append(
             RtcFrame(
@@ -117,7 +146,7 @@ def parse_rtcm3(data: bytes) -> list[RtcFrame]:
                 data=frame_data,
             )
         )
-        i += 3 + length
+        i = crc_end
 
     return frames
 
