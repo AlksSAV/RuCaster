@@ -16,6 +16,7 @@ from app.core.security import decode_access_token
 from app.db.session import close_db, init_db
 from app.ntrip.hub import NtripHub
 from app.ntrip.server import NtripServer
+from app.services.recorder import RecordManager
 from app.ws.hub import ws_hub
 
 logging.basicConfig(
@@ -31,6 +32,7 @@ class AppContext:
     def __init__(self) -> None:
         self.ntrip_hub: NtripHub | None = None
         self.ntrip_server: NtripServer | None = None
+        self.record_manager: RecordManager | None = None
         self._shutdown_event = asyncio.Event()
 
 
@@ -50,6 +52,16 @@ async def lifespan(app: FastAPI):
     await ctx.ntrip_server.start()
     log.info("NTRIP server started on %s:%s", settings.ntrip_host, settings.ntrip_port)
 
+    # T-007: менеджер записей статики
+    ctx.record_manager = RecordManager(
+        hub=ctx.ntrip_hub,
+        root=settings.records_dir,
+        retention_days=settings.retention_days,
+        default_duration=settings.default_record_duration_s,
+        max_duration=settings.max_record_duration_s,
+    )
+    ctx.record_manager.start_retention()
+
     # SIGINT/SIGTERM
     def _signal_handler() -> None:
         log.info("Shutdown signal received")
@@ -66,6 +78,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     log.info("Shutting down...")
+    if ctx.record_manager:
+        await ctx.record_manager.shutdown()
     if ctx.ntrip_server:
         await ctx.ntrip_server.stop()
     await close_db()

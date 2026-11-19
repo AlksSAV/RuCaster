@@ -79,6 +79,21 @@
 ### T-007. Запись статики (records) — заглушки 501
 - **Файл:** `backend/app/api/records.py`
 - **Суть:** начать запись в `settings.records_dir`, ротация, zip по дням, ретенция.
+- **Статус:** ✅ закрыто. `app/services/recorder.py`: `RecordManager` + `Recording`.
+  `NtripHub.add_sink/remove_sink` — подписка на чанки потока источника, ошибка
+  получателя не рвёт NTRIP. Запись идёт через `asyncio.Queue` (2048 чанков) и
+  задачу-писатель `aiofiles`, поэтому диск не тормозит ретрансляцию; при
+  переполнении очереди чанки отбрасываются со счётчиком `dropped_chunks`.
+  Файлы: `<records_dir>/<mountpoint>/<ГГГГММДД>_<ЧЧММ>.rtcm`, ротация по смене
+  календарных суток (UTC). Ретенция — фоновая задача раз в час по дате из имени
+  файла (`retention_days`), пустые каталоги удаляются. Менеджер подключён в
+  `lifespan`, при shutdown активные записи дописывают очередь и закрывают файлы.
+  API: `POST /api/record/{mp}` (владелец/админ, проверка `can_record`, 409 при
+  активной записи, лимит `max_record_duration_s`), `GET /api/record` (активные +
+  диск + defaults), `DELETE /api/record/{pid}` (владелец/админ), `GET
+  /api/record/{mp}` (файлы), `GET /api/record/{mp}/{fname}` (скачивание),
+  `GET /api/record/{mp}/day/{date}` (zip за день). Имена файлов валидируются
+  регуляркой — выхода за каталог нет. Тесты: `test_records.py` (24).
 
 ### T-008. Подмена координат (proxy) — заглушки 501
 - **Файл:** `backend/app/api/proxy.py`

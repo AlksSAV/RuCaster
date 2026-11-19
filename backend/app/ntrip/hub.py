@@ -7,6 +7,7 @@ import logging
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -115,6 +116,8 @@ class NtripHub:
         self._total_client_connections = 0
         # RTCM-анализ по mountpoint (T-009)
         self._analyzers: dict[str, RtcmAnalyzer] = {}
+        # Подписчики на поток источника (T-007: запись в файл)
+        self._sinks: dict[str, list[Callable[[bytes], None]]] = {}
 
     # ---------- учёт в журнале ----------
 
@@ -187,6 +190,30 @@ class NtripHub:
             return None
         return analyzer.report(connected=self.is_source_connected(mountpoint))
 
+    # ---------- подписка на поток источника (T-007) ----------
+
+    def add_sink(self, mountpoint: str, sink: Callable[[bytes], None]) -> None:
+        """Подписать получателя на чанки RTCM-потока mountpoint."""
+        self._sinks.setdefault(mountpoint, []).append(sink)
+
+    def remove_sink(self, mountpoint: str, sink: Callable[[bytes], None]) -> None:
+        """Отписать получателя (повторный вызов безопасен)."""
+        sinks = self._sinks.get(mountpoint)
+        if not sinks:
+            return
+        if sink in sinks:
+            sinks.remove(sink)
+        if not sinks:
+            self._sinks.pop(mountpoint, None)
+
+    def _feed_sinks(self, mountpoint: str, data: bytes) -> None:
+        """Отдать чанк подписчикам. Ошибка получателя не должна рвать поток."""
+        for sink in list(self._sinks.get(mountpoint, [])):
+            try:
+                sink(data)
+            except Exception:  # noqa: BLE001 — получатель не влияет на NTRIP
+                log.exception("Sink failed for %s", mountpoint)
+
     # ---------- NTRIP: источник (база) ----------
 
     async def handle_source(
@@ -248,6 +275,7 @@ class NtripHub:
                 session["bytes_received"] += len(data)
                 session["last_seen"] = datetime.now(UTC)
                 self.feed_rtcm(mountpoint, data)  # T-009: анализ RTCM-потока
+                self._feed_sinks(mountpoint, data)  # T-007: запись в файл
                 await self._broadcast_to_clients(mountpoint, data)
         except (ConnectionResetError, BrokenPipeError):
             log.info("Source disconnected: %s", session_id)
