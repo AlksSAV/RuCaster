@@ -124,6 +124,16 @@
 ### T-011. Гео-утилиты: remote-station / remote-mountpoints — заглушки
 - **Файл:** `backend/app/api/geo.py`
 - **Суть:** подключение к внешним кастерам (httpx), чтение sourcetable/1005/1006.
+- **Статус:** ✅ закрыто. `app/services/geo.py`: `parse_sourcetable` (NTRIP v1 `STR;`
+  и v2 `SOURCELOG;`, координаты DMS+полушарие разбираются через split по `;`),
+  `fetch_sourcetable` (httpx GET `/`), `connect_ntrip_source` (TCP GET mountpoint,
+  базовая авторизация, чтение RTCM-потока до таймаута), `fetch_station_coords`
+  (сначала sourcetable, для GGA/нулевых координат — RTCM 1006/1005 из потока),
+  `ecef_to_wgs84` и декодеры 1005/1006 через `pyrtcm` (`RTCMMessage` + `ecef2llh`,
+  1006 с высотой антенны). API: `GET /api/remote-mountpoints` (список маунтов с
+  координатами), `GET /api/remote-station` (`found/ecef/lat/lon/height`), валидация
+  host/port (400), сетевые ошибки → 502, таймаут → 504. Тесты: `test_geo.py` (24),
+  кадры 1005/1006 собираются синтетически в раскладке полей pyrtcm.
 
 ### T-012. `create_source` не проверяет квоту пользователя
 - **Файл:** `backend/app/api/sources.py:create_source`
