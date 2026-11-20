@@ -87,14 +87,21 @@ async def create_source(
 
 
 @router.delete("/{mountpoint}")
-async def delete_source(mountpoint: str, session: AsyncSession = Depends(get_session)):
+async def delete_source(
+    mountpoint: str,
+    session: AsyncSession = Depends(get_session),
+    user: UserModel = Depends(get_current_user),
+):
     """Удалить источник."""
-    # TODO: проверка прав владельца/admin
     stmt = select(SourceModel).where(SourceModel.mountpoint == mountpoint)
     result = await session.execute(stmt)
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(404, "источник не найден")
+
+    # Право на удаление: только владелец источника или admin
+    if source.owner_id != user.id and user.role != "admin":
+        raise HTTPException(403, "нет доступа к чужому источнику")
 
     await session.delete(source)
     await session.commit()
