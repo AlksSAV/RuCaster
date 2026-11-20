@@ -192,6 +192,22 @@
   Попутно: `npm install` → `npm ci` (воспроизводимость по `package-lock.json`, I-005)
   и добавлен кэш npm по `frontend/package-lock.json`.
 
+### B-003. CI-падения, скрытые `continue-on-error` и format-check
+- **Файлы:** `backend/pyproject.toml`, `backend/tests/test_monitoring_api.py`
+- **Суть:** после снятия `continue-on-error` и приведения кода к `ruff format`
+  в CI вскрылись 11 падений тестов, которые до этого маскировались:
+  1. `passlib 1.7.4` несовместим с `bcrypt>=4.1` (`AttributeError: __about__` →
+     ложная `ValueError: password cannot be longer than 72 bytes`). В CI ставился
+     bcrypt 5.0.0, локально был 4.0.1 — поэтому расхождение не замечалось.
+  2. `test_monitoring_api.py` ходил в БД через глобальный `session_scope` по
+     относительному пути `./data/rucaster.db`; в чистом CI файла нет →
+     `unable to open database file`.
+- **Приоритет:** высокий (CI был фактически красным).
+- **Статус:** ✅ закрыто. `bcrypt>=4.0.1,<4.1` закреплён в зависимостях (воспроизводимо
+  локально и в CI); в тестах мониторинга добавлена autouse-фикстура с in-memory БД
+  (monkeypatch `app.ntrip.hub.session_scope`). Проверено воспроизведением обоих
+  падений локально и их исчезновением после фикса: 173 passed, ruff/format чистые.
+
 ### Q-004. Нет Alembic-миграций
 - Сейчас `create_all` в lifespan. Для прода — `alembic init` + первая ревизия.
 

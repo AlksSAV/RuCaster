@@ -1,7 +1,10 @@
 """Тесты HTTP-эндпоинтов мониторинга (T-003).
 
 Проверяется обвязка API: hub внедряется через app.state.ctx (как в main.py),
-запросы идут через ASGI-транспорт без реального NTRIP-сервера и БД.
+запросы идут через ASGI-транспорт без реального NTRIP-сервера.
+
+Для эндпоинтов, читающих БД через глобальный session_scope (hub.get_status,
+hub.get_statistics), тесты используют in-memory БД через autouse-фикстуру.
 """
 
 from __future__ import annotations
@@ -11,13 +14,34 @@ from types import SimpleNamespace
 
 import pytest
 from app.api import monitoring
+from app.db.models import Base
 from app.ntrip.hub import NtripHub
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 
 class _FakeServer:
     running = True
+
+
+@pytest.fixture(autouse=True)
+async def _in_memory_db(monkeypatch):
+    """Hub читает БД через глобальный session_scope; подменяем на in-memory.
+
+    Иначе тесты зависят от наличия ./data/rucaster.db и падают в чистом CI.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sm = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    monkeypatch.setattr("app.ntrip.hub.session_scope", sm)
+    yield sm
+    await engine.dispose()
 
 
 def _make_app(hub: NtripHub) -> FastAPI:

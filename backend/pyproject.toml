@@ -23,6 +23,9 @@ dependencies = [
     "pydantic-settings>=2.7,<3.0",
     "python-jose[cryptography]>=3.3,<4.0",
     "passlib[bcrypt]>=1.7,<2.0",
+    # passlib 1.7.4 несовместим с bcrypt>=4.1 (нет __about__ → ложная ошибка «72 bytes»).
+    # Зафиксируем ветку, на которой протестирован код.
+    "bcrypt>=4.0.1,<4.1",
     "python-multipart>=0.0.12,<1.0",
     "pyrtcm>=1.1,<2.0",
     "geojson>=3.2,<4.0",
