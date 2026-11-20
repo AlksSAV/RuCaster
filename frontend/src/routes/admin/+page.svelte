@@ -17,8 +17,9 @@
 
 	async function load() {
 		const res = await fetch('/api/users', { credentials: 'include' });
-		if (res.status === 403) {
-			error = 'admin only';
+		if (res.status === 401 || res.status === 403) {
+			// не авторизован или не админ — уходим на дашборд
+			window.location.href = '/dashboard';
 			return;
 		}
 		if (!res.ok) {

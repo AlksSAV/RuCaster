@@ -1,7 +1,12 @@
 <script lang="ts">
 	import '../app.css';
+	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import { currentUser, loadUser } from '$lib/stores/user';
+
 	let { children }: { children: Snippet } = $props();
+
+	onMount(loadUser);
 </script>
 
 <div class="app">
@@ -12,7 +17,9 @@
 				<a href="/dashboard">Dashboard</a>
 				<a href="/stations">Stations</a>
 				<a href="/map">Map</a>
-				<a href="/admin">Admin</a>
+				{#if $currentUser?.role === 'admin'}
+					<a href="/admin">Admin</a>
+				{/if}
 				<a href="/settings">Settings</a>
 			</nav>
 		</div>
