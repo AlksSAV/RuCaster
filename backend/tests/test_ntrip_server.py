@@ -89,16 +89,18 @@ class TestBuildSourcetable:
         assert "STR;" not in result
 
     def test_single_entry(self):
-        result = build_sourcetable([
-            {
-                "mountpoint": "BASE1",
-                "identifier": "My Base",
-                "format": "RTCM 3",
-                "nav_system": "GPS",
-                "latitude": "55.75",
-                "longitude": "37.62",
-            }
-        ])
+        result = build_sourcetable(
+            [
+                {
+                    "mountpoint": "BASE1",
+                    "identifier": "My Base",
+                    "format": "RTCM 3",
+                    "nav_system": "GPS",
+                    "latitude": "55.75",
+                    "longitude": "37.62",
+                }
+            ]
+        )
         assert "STR;BASE1;My Base;RTCM 3;0;GPS;" in result
         assert ";55.75;37.62;" in result
 

@@ -189,17 +189,13 @@ class TestLogin:
     async def test_pending_user_denied(self, app: FastAPI, session: AsyncSession):
         await _make_user(session, username="pend", email="pend@example.com", status="pending")
         async with _make_client(app) as c:
-            resp = await c.post(
-                "/api/auth/login", json={"username": "pend", "password": PASSWORD}
-            )
+            resp = await c.post("/api/auth/login", json={"username": "pend", "password": PASSWORD})
             assert resp.status_code == 401
 
     async def test_blocked_user_denied(self, app: FastAPI, session: AsyncSession):
         await _make_user(session, username="blk", email="blk@example.com", status="blocked")
         async with _make_client(app) as c:
-            resp = await c.post(
-                "/api/auth/login", json={"username": "blk", "password": PASSWORD}
-            )
+            resp = await c.post("/api/auth/login", json={"username": "blk", "password": PASSWORD})
             assert resp.status_code == 401
 
     async def test_lockout_after_max_attempts(self, app: FastAPI, session: AsyncSession):

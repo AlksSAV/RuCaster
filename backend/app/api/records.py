@@ -76,9 +76,7 @@ async def start_record(
     if duration <= 0:
         duration = manager.default_duration
     if duration > manager.max_duration:
-        raise HTTPException(
-            400, f"длительность больше максимальной ({manager.max_duration} с)"
-        )
+        raise HTTPException(400, f"длительность больше максимальной ({manager.max_duration} с)")
 
     rec = manager.start(mountpoint, owner=user.username, duration=duration)
     return RecordStartResponse(**rec.as_dict())

@@ -390,9 +390,13 @@ class NtripHub:
                         client_session["position_at"] = time.time()
                         log.debug(
                             "GGA from %s (%s) at %s: (%.6f, %.6f) q=%d sats=%d",
-                            peer, user, mountpoint,
-                            gga.latitude, gga.longitude,
-                            gga.fix_quality, gga.num_sats,
+                            peer,
+                            user,
+                            mountpoint,
+                            gga.latitude,
+                            gga.longitude,
+                            gga.fix_quality,
+                            gga.num_sats,
                         )
         except (ConnectionResetError, BrokenPipeError):
             pass

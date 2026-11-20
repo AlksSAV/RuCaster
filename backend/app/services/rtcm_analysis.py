@@ -121,9 +121,7 @@ def extract_rtcm3_frames(buf: bytearray) -> tuple[list[RtcFrame], int]:
         stored = (buf[3 + length] << 16) | (buf[4 + length] << 8) | buf[5 + length]
         crc_ok = crc24q(bytes(buf[: 3 + length])) == stored
         msg_type = (body[0] << 4) | (body[1] >> 4)
-        frames.append(
-            RtcFrame(msg_type=msg_type, length=length, crc_ok=crc_ok, data=body)
-        )
+        frames.append(RtcFrame(msg_type=msg_type, length=length, crc_ok=crc_ok, data=body))
         del buf[:need]
         if len(buf) > 65536:  # защита от роста без кадров
             junk += len(buf)

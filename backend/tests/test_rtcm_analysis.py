@@ -283,9 +283,7 @@ class TestAnalysisApi:
                 return user
 
             app.dependency_overrides[monitoring.get_current_user] = _u
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://t"
-            ) as c:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
                 resp = await c.get("/analysis/BASE1")
                 return resp.status_code, resp.json() if resp.status_code == 200 else {}
 

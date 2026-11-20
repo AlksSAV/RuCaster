@@ -69,9 +69,10 @@ async def remote_station(
     try:
         import pyrtcm
 
-        ecef = tuple(round(v, 4) for v in pyrtcm.llh2ecef(
-            coords["latitude"], coords["longitude"], coords["height"]
-        ))
+        ecef = tuple(
+            round(v, 4)
+            for v in pyrtcm.llh2ecef(coords["latitude"], coords["longitude"], coords["height"])
+        )
     except Exception:  # noqa: BLE001 — ecef необязателен
         ecef = None
 

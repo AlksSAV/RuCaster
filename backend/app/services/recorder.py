@@ -252,9 +252,7 @@ class RecordManager:
             for directory in sorted(self.root.iterdir()):
                 if not directory.is_dir():
                     continue
-                files = [
-                    p for p in directory.iterdir() if p.is_file() and FILE_RE.match(p.name)
-                ]
+                files = [p for p in directory.iterdir() if p.is_file() and FILE_RE.match(p.name)]
                 if not files:
                     continue
                 size = sum(p.stat().st_size for p in files)

@@ -153,7 +153,7 @@ class TestExtractNmeaLines:
         assert buf == b""  # полный буфер очищается
 
     def test_partial_line_stays_in_buffer(self):
-        buf = bytearray(b"$GNGGA,1234" )
+        buf = bytearray(b"$GNGGA,1234")
         assert extract_nmea_lines(buf) == []
         assert bytes(buf) == b"$GNGGA,1234"
         # достраиваем строку — теперь она выделяется

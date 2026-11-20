@@ -55,9 +55,7 @@ async def create_source(
 
     # T-012: проверка квоты источников пользователя
     count_stmt = (
-        select(func.count())
-        .select_from(SourceModel)
-        .where(SourceModel.owner_id == user.id)
+        select(func.count()).select_from(SourceModel).where(SourceModel.owner_id == user.id)
     )
     count = (await session.execute(count_stmt)).scalar_one()
     quota = user.quotas_sources or 0

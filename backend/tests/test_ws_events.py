@@ -99,7 +99,10 @@ class TestHubEmit:
         events = [
             ("source_disconnected", {"mountpoint": "B", "peer": "p", "bytes_received": 1024}),
             ("client_connected", {"mountpoint": "B", "user": "r1", "peer": "p"}),
-            ("client_disconnected", {"mountpoint": "B", "user": "r1", "peer": "p", "bytes_sent": 2048}),
+            (
+                "client_disconnected",
+                {"mountpoint": "B", "user": "r1", "peer": "p", "bytes_sent": 2048},
+            ),
         ]
         with patch("app.ntrip.hub.ws_hub", test_ws_hub):
             for type_, data in events:

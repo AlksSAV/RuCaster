@@ -39,8 +39,9 @@ def build_1006(x: float, y: float, z: float, ant: float = 1.5) -> bytes:
     return _build_arp(1006, x, y, z, ant=ant)
 
 
-def _build_arp(mid: int, x: float, y: float, z: float, station: int = 1234,
-               ant: float | None = None) -> bytes:
+def _build_arp(
+    mid: int, x: float, y: float, z: float, station: int = 1234, ant: float | None = None
+) -> bytes:
     b = _bits_uint(mid, 12) + _bits_uint(station, 12) + _bits_uint(0, 6)
     b += _bits_uint(1, 1) + _bits_uint(0, 1) + _bits_uint(0, 1) + _bits_uint(0, 1)
     b += _bits_int(round(x * 10000), 38) + _bits_uint(0, 1) + _bits_uint(0, 1)
@@ -228,9 +229,7 @@ class TestGeoApi:
 
         monkeypatch.setattr(geo, "fetch_sourcetable", fake_table)
         app = _app()
-        code, data = await _get(
-            app, "/api/remote-mountpoints", {"host": "h", "port": 2101}
-        )
+        code, data = await _get(app, "/api/remote-mountpoints", {"host": "h", "port": 2101})
         assert code == 200
         names = [m["mountpoint"] for m in data["mountpoints"]]
         assert "BASE1" in names

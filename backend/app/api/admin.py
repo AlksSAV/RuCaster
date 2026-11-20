@@ -46,11 +46,7 @@ async def _get_user_or_404(username: str, session: AsyncSession) -> UserModel:
 
 async def _ensure_no_sources(user: UserModel, session: AsyncSession) -> None:
     """Удаление пользователя допустимо только когда у него нет источников."""
-    stmt = (
-        select(func.count())
-        .select_from(SourceModel)
-        .where(SourceModel.owner_id == user.id)
-    )
+    stmt = select(func.count()).select_from(SourceModel).where(SourceModel.owner_id == user.id)
     count = (await session.execute(stmt)).scalar_one()
     if count:
         raise HTTPException(

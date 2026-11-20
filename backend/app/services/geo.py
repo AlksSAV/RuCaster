@@ -208,7 +208,7 @@ async def connect_ntrip_source(
             return None
 
         # Пропустить заголовки
-        data = buf[header_end + 4:]
+        data = buf[header_end + 4 :]
 
         # Читать данные пока есть (до таймаута)
         while asyncio.get_event_loop().time() < deadline:
@@ -247,7 +247,12 @@ async def fetch_sourcetable(
 
 
 async def fetch_station_coords(
-    host: str, port: int, mountpoint: str, user: str = "", password: str = "", timeout: float = 15.0
+    host: str,
+    port: int,
+    mountpoint: str,
+    user: str = "",
+    password: str = "",
+    timeout: float = 15.0,
 ) -> dict[str, float] | None:
     """Получить координаты станции mountpoint: sourcetable или RTCM 1005/1006."""
     # 1. Sourcetable — быстрый путь
