@@ -35,8 +35,6 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
-    # Фронтенд-каркас ещё не собран (см. backlog Q-003), джоб не блокирует CI
-    continue-on-error: true
     defaults:
       run:
         working-directory: frontend
@@ -46,9 +44,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install
-        run: npm install --no-fund --no-audit
+        run: npm ci --no-fund --no-audit
 
       - name: Check (svelte-check)
         run: npm run check
