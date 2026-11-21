@@ -23,6 +23,7 @@ from app.ntrip.server import (
     SOURCE_UNAUTHORIZED,
     build_sourcetable,
 )
+from app.services.proxy_service import ProxyService
 from app.services.rtcm_analysis import RtcmAnalyzer
 from app.ws.hub import ws_hub
 
@@ -118,6 +119,8 @@ class NtripHub:
         self._analyzers: dict[str, RtcmAnalyzer] = {}
         # Подписчики на поток источника (T-007: запись в файл)
         self._sinks: dict[str, list[Callable[[bytes], None]]] = {}
+        # T-008: proxy-сервис
+        self.proxy_service: ProxyService | None = None
 
     # ---------- учёт в журнале ----------
 
@@ -277,6 +280,7 @@ class NtripHub:
                 self.feed_rtcm(mountpoint, data)  # T-009: анализ RTCM-потока
                 self._feed_sinks(mountpoint, data)  # T-007: запись в файл
                 await self._broadcast_to_clients(mountpoint, data)
+                await self._broadcast_proxy(mountpoint, data)  # T-008: подмены
         except (ConnectionResetError, BrokenPipeError):
             log.info("Source disconnected: %s", session_id)
         finally:
@@ -285,6 +289,8 @@ class NtripHub:
                 session.get("conn"), bytes_received=session.get("bytes_received", 0)
             )
             await self._cleanup_client_sessions(mountpoint)
+            # T-008: закрыть SHIFTED-клиентов при отключении источника
+            await self._cleanup_proxy_client_sessions(mountpoint)
             await self._emit(
                 "source_disconnected",
                 {
@@ -342,7 +348,15 @@ class NtripHub:
             )
             source = (await session.execute(stmt)).scalar_one_or_none()
 
-        if not source:
+        # T-008: клиент может подписаться и на target подмены (<mp>_SHIFTED)
+        is_proxy_target = False
+        if not source and self.proxy_service:
+            is_proxy_target = any(
+                p["is_active"] and p["target_mountpoint"] == mountpoint
+                for p in self.proxy_service.get_all_active()
+            )
+
+        if not source and not is_proxy_target:
             # Несуществующий mountpoint — тоже 401 (не раскрываем существование)
             self._register_rejection()
             writer.write(AUTH_REQUIRED.encode())
@@ -437,6 +451,30 @@ class NtripHub:
                 log.warning("Client disconnect during broadcast: %s", client["peer"])
                 self._remove_client_session(mountpoint, client)
 
+    async def _broadcast_proxy(self, source_mountpoint: str, data: bytes) -> None:
+        """T-008: трансформировать поток и разослать клиентам подмен (SHIFTED).
+
+        Оригинал на source_mountpoint остаётся нетронутым; каждый активный
+        proxy для этого источника получает свой модифицированный поток на
+        target_mountpoint.
+        """
+        if not self.proxy_service:
+            return
+        proxies = self.proxy_service.get_active_by_source(source_mountpoint)
+        for proxy in proxies:
+            target = proxy["target_mountpoint"]
+            # relay-поток приходит из отдельной задачи, не из SOURCE-сессии
+            if proxy["mode"] == "relay":
+                continue
+            try:
+                transformed = self.proxy_service.transform_chunk(proxy, data)
+            except Exception:  # noqa: BLE001 — подмена не должна рвать оригинал
+                log.exception("Proxy transform failed for %s", target)
+                continue
+            if not transformed:
+                continue
+            await self._broadcast_to_clients(target, transformed)
+
     async def _cleanup_client_sessions(self, mountpoint: str) -> None:
         """Закрыть клиентов mountpoint при отключении его источника."""
         for client in self._client_sessions.pop(mountpoint, []):
@@ -445,6 +483,19 @@ class NtripHub:
                 client["writer"].close()
             except Exception:
                 pass
+
+    async def _cleanup_proxy_client_sessions(self, source_mountpoint: str) -> None:
+        """T-008: закрыть клиентов SHIFTED при отключении исходного источника.
+
+        Relay-подмены не зависят от локального SOURCE (поток идёт с внешнего
+        кастера), поэтому их цели не закрываем.
+        """
+        if not self.proxy_service:
+            return
+        for proxy in self.proxy_service.get_active_by_source(source_mountpoint):
+            if proxy["mode"] == "relay":
+                continue
+            await self._cleanup_client_sessions(proxy["target_mountpoint"])
 
     async def _get_active_sources(self) -> list[dict[str, str]]:
         """Список активных источников для sourcetable."""
@@ -460,6 +511,19 @@ class NtripHub:
                         "nav_system": "GPS+GLO+GAL+BDS",
                         "latitude": str(src.latitude or 0),
                         "longitude": str(src.longitude or 0),
+                    }
+                )
+        # T-008: добавить target_mountpoints активных proxy (SHIFTED)
+        if self.proxy_service:
+            for proxy in self.proxy_service.get_all_active():
+                sources.append(
+                    {
+                        "mountpoint": proxy["target_mountpoint"],
+                        "identifier": proxy["target_mountpoint"],
+                        "format": "RTCM 3",
+                        "nav_system": "GPS+GLO+GAL+BDS",
+                        "latitude": "0",
+                        "longitude": "0",
                     }
                 )
         return sources

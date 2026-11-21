@@ -16,6 +16,7 @@ from app.core.security import decode_access_token
 from app.db.session import close_db, init_db
 from app.ntrip.hub import NtripHub
 from app.ntrip.server import NtripServer
+from app.services.proxy_service import ProxyService
 from app.services.recorder import RecordManager
 from app.ws.hub import ws_hub
 
@@ -26,6 +27,61 @@ logging.basicConfig(
 log = logging.getLogger("rucaster")
 
 
+async def _restore_proxies(ctx: AppContext) -> None:
+    """Восстановить proxy из БД при старте."""
+    from sqlalchemy import select
+
+    from app.db.models import ProxyModel
+    from app.db.session import session_scope
+
+    ps = ctx.proxy_service
+    if not ps:
+        return
+
+    try:
+        async with session_scope() as session:
+            rows = (
+                (await session.execute(select(ProxyModel).where(ProxyModel.is_active)))
+                .scalars()
+                .all()
+            )
+    except Exception:
+        log.warning("Failed to restore proxy from DB", exc_info=True)
+        return
+
+    for p in rows:
+        ps.add_proxy(
+            proxy_id=p.id,
+            owner_id=p.owner_id,
+            source_mountpoint=p.source_mountpoint,
+            target_mountpoint=p.target_mountpoint,
+            mode=p.mode,
+            serve_mountpoint=p.serve_mountpoint,
+            dest_port=p.dest_port,
+            x=p.x,
+            y=p.y,
+            z=p.z,
+            de=p.de,
+            dn=p.dn,
+            du=p.du,
+            relay_host=p.relay_host,
+            relay_port=p.relay_port,
+            relay_mountpoint=p.relay_mountpoint,
+            relay_user=p.relay_user,
+            relay_password=p.relay_password,
+        )
+        if p.mode == "relay" and p.relay_host and p.relay_mountpoint:
+            await ps.activate_relay(
+                source_mountpoint=p.source_mountpoint,
+                target_mountpoint=p.target_mountpoint,
+                src_host=p.relay_host,
+                src_port=p.relay_port or 2101,
+                src_mountpoint=p.relay_mountpoint,
+                src_user=p.relay_user or "",
+                src_password=p.relay_password or "",
+            )
+
+
 class AppContext:
     """Глобальный контекст приложения."""
 
@@ -33,6 +89,7 @@ class AppContext:
         self.ntrip_hub: NtripHub | None = None
         self.ntrip_server: NtripServer | None = None
         self.record_manager: RecordManager | None = None
+        self.proxy_service: ProxyService | None = None
         self._shutdown_event = asyncio.Event()
 
 
@@ -61,6 +118,14 @@ async def lifespan(app: FastAPI):
         max_duration=settings.max_record_duration_s,
     )
     ctx.record_manager.start_retention()
+
+    # T-008: proxy-сервис (двусторонняя связь с hub для relay-рассылки)
+    ctx.proxy_service = ProxyService()
+    ctx.proxy_service.hub = ctx.ntrip_hub
+    ctx.ntrip_hub.proxy_service = ctx.proxy_service
+    # Восстановить proxy из БД
+    await _restore_proxies(ctx)
+    log.info("Proxy service initialized")
 
     # SIGINT/SIGTERM
     def _signal_handler() -> None:

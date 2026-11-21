@@ -98,6 +98,32 @@
 ### T-008. Подмена координат (proxy) — заглушки 501
 - **Файл:** `backend/app/api/proxy.py`
 - **Суть:** relay/absolute/offset + публикация `<mp>_SHIFTED`/`<mp>_RELAY`.
+- **Статус:** ✅ закрыто. `app/services/proxy_service.py`: `ProxyService` —
+  реестр подмен, трансформация RTCM и relay-задачи.
+  - **absolute** — замена ECEF X/Y/Z (DF025/DF026/DF027) в RTCM 1005/1006;
+    остальные поля (номер станции, высота антенны 1006) сохраняются.
+    Реализовано битовым сплайсом payload: `pyrtcm.RTCMMessage` неизменяем,
+    поэтому пересобираются только три 38-битных поля.
+  - **offset** — те же поля + de/dn/du (метры ECEF).
+  - **relay** — подключение к внешнему NTRIP-кастеру (Basic-auth), поток
+    отдаётся клиентам `<mp>_RELAY` через `NtripHub._broadcast_to_clients`.
+  - `transform_chunk()` — потоковая буферизация: RTCM-кадр, разрезанный
+    границей чанка, собирается из буфера (иначе клиент получал обрывок);
+    кадры пересобираются с корректным CRC-24Q.
+  - Оригинальный поток источника не меняется: подмены публикуются на
+    отдельные mountpoints, они видны в sourcetable и доступны клиентам
+    (авторизация — общий путь `handle_client`).
+  - При отключении источника клиенты его SHIFTED-маунтов закрываются
+    (`_cleanup_proxy_client_sessions`); relay-маунты не трогаются (их поток
+    приходит извне).
+  - API: `GET /api/proxy` (свои), `POST /api/proxy` (квота
+    `quotas_substitutions`, владелец/админ, 404/403/409/422),
+    `DELETE /api/proxy/{pid}`, `GET /api/proxy/{pid}/check-upstream`.
+  - Схема БД: `ProxyModel` дополнена полями relay (`relay_host`, `relay_port`,
+    `relay_mountpoint`, `relay_user`, `relay_password`); при старте подмены
+    восстанавливаются из БД (`_restore_proxies`), relay-задачи перезапускаются.
+  - Тесты: `test_proxy.py` (31) — трансформация, буферизация, CRUD/права/квота,
+    relay-upstream, sourcetable, закрытие SHIFTED-клиентов. Всего 204 passed.
 
 ### T-009. Анализ RTCM-потока не реализован
 - **Модуль:** `backend/app/services/` (пусто)

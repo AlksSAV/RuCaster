@@ -133,6 +133,12 @@ class ProxyModel(Base):
     de = Column(Float, nullable=True)
     dn = Column(Float, nullable=True)
     du = Column(Float, nullable=True)
+    # relay: параметры внешнего кастера-апстрима
+    relay_host = Column(String(255), nullable=True)
+    relay_port = Column(Integer, nullable=True)
+    relay_mountpoint = Column(String(50), nullable=True)
+    relay_user = Column(String(50), nullable=True)
+    relay_password = Column(String(128), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
